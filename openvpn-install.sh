@@ -32,7 +32,7 @@ if [[ -e /etc/debian_version ]]; then
 	VERSION_ID=$(cat /etc/os-release | grep "VERSION_ID")
 	RCLOCAL='/etc/rc.local'
 	SYSCTL='/etc/sysctl.conf'
-	if [[ "$VERSION_ID" != 'VERSION_ID="8"' ]] && [[ "$VERSION_ID" != 'VERSION_ID="9"' ]] && [[ "$VERSION_ID" != 'VERSION_ID="16.04"' ]] && [[ "$VERSION_ID" != 'VERSION_ID="18.04"' ]] && [[ "$VERSION_ID" != 'VERSION_ID="18.10"' ]] && [[ "$VERSION_ID" != 'VERSION_ID="19.04"' ]]; then
+	if [[ "$VERSION_ID" != 'VERrc.local'11"' ]] && [[ "$VERSION_ID" != 'VERSION_ID="9"' ]] && [[ "$VERSION_ID" != 'VERSION_ID="16.04"' ]] && [[ "$VERSION_ID" != 'VERSION_ID="18.04"' ]] && [[ "$VERSION_ID" != 'VERSION_ID="18.10"' ]] && [[ "$VERSION_ID" != 'VERSION_ID="19.04"' ]]; then
 		echo "Your version of Debian/Ubuntu is not supported. Please look at the documentation."
 		exit 4
 	fi
