@@ -35,7 +35,7 @@ This fork includes the following features:
 
 The script is made to work on these OS:
 
-- Debian 9
+- Debian 11 ##Updated
 
 ## Installation
 
