@@ -32,7 +32,7 @@ if [[ -e /etc/debian_version ]]; then
 	VERSION_ID=$(cat /etc/os-release | grep "VERSION_ID")
 	RCLOCAL='/etc/rc.local'
 	SYSCTL='/etc/sysctl.conf'
-	if [[ "$VERSION_ID" != 'VERSION_ID="11"' ]] && [[ "$VERSION_ID" != 'VERSION_ID="9"' ]] && [[ "$VERSION_ID" != 'VERSION_ID="16.04"' ]] && [[ "$VERSION_ID" != 'VERSION_ID="18.04"' ]] && [[ "$VERSION_ID" != 'VERSION_ID="18.10"' ]] && [[ "$VERSION_ID" != 'VERSION_ID="19.04"' ]]; then
+	if [[ "$VERSION_ID" != 'VERSION_ID="11"' ]] && [[ "$VERSION_ID" != 'VERSION_ID="9"' ]] && [[ "$VERSION_ID" != 'VERSION_ID="20.04"' ]] && [[ "$VERSION_ID" != 'VERSION_ID="18.04"' ]] && [[ "$VERSION_ID" != 'VERSION_ID="18.10"' ]] && [[ "$VERSION_ID" != 'VERSION_ID="22.04"' ]]; then
 		echo "Your version of Debian/Ubuntu is not supported. Please look at the documentation."
 		exit 4
 	fi
@@ -69,6 +69,7 @@ if [[ -e /etc/openvpn/server.conf ]]; then
 		echo "What do you want to do?"
 		echo " 1) Create a new user"
 		echo " 2) Revoke an existing user"
+  		echo " 3) Remove OpenVPN"
 		echo " 4) Exit"
 		read -p "Select an option [1-4]: " option
 
@@ -117,6 +118,58 @@ if [[ -e /etc/openvpn/server.conf ]]; then
 			echo "Exiting..."
 			exit
 			;;
+   			3)
+			echo
+			read -p "Confirm OpenVPN removal? [y/N]: " remove
+			until [[ "$remove" =~ ^[yYnN]*$ ]]; do
+				echo "$remove: invalid selection."
+				read -p "Confirm OpenVPN removal? [y/N]: " remove
+			done
+			if [[ "$remove" =~ ^[yY]$ ]]; then
+				port=$(grep '^port ' /etc/openvpn/server/server.conf | cut -d " " -f 2)
+				protocol=$(grep '^proto ' /etc/openvpn/server/server.conf | cut -d " " -f 2)
+				if systemctl is-active --quiet firewalld.service; then
+					ip=$(firewall-cmd --direct --get-rules ipv4 nat POSTROUTING | grep '\-s 10.8.0.0/24 '"'"'!'"'"' -d 10.8.0.0/24' | grep -oE '[^ ]+$')
+					# Using both permanent and not permanent rules to avoid a firewalld reload.
+					firewall-cmd --remove-port="$port"/"$protocol"
+					firewall-cmd --zone=trusted --remove-source=10.8.0.0/24
+					firewall-cmd --permanent --remove-port="$port"/"$protocol"
+					firewall-cmd --permanent --zone=trusted --remove-source=10.8.0.0/24
+					firewall-cmd --direct --remove-rule ipv4 nat POSTROUTING 0 -s 10.8.0.0/24 ! -d 10.8.0.0/24 -j SNAT --to "$ip"
+					firewall-cmd --permanent --direct --remove-rule ipv4 nat POSTROUTING 0 -s 10.8.0.0/24 ! -d 10.8.0.0/24 -j SNAT --to "$ip"
+					if grep -qs "server-ipv6" /etc/openvpn/server/server.conf; then
+						ip6=$(firewall-cmd --direct --get-rules ipv6 nat POSTROUTING | grep '\-s fddd:1194:1194:1194::/64 '"'"'!'"'"' -d fddd:1194:1194:1194::/64' | grep -oE '[^ ]+$')
+						firewall-cmd --zone=trusted --remove-source=fddd:1194:1194:1194::/64
+						firewall-cmd --permanent --zone=trusted --remove-source=fddd:1194:1194:1194::/64
+						firewall-cmd --direct --remove-rule ipv6 nat POSTROUTING 0 -s fddd:1194:1194:1194::/64 ! -d fddd:1194:1194:1194::/64 -j SNAT --to "$ip6"
+						firewall-cmd --permanent --direct --remove-rule ipv6 nat POSTROUTING 0 -s fddd:1194:1194:1194::/64 ! -d fddd:1194:1194:1194::/64 -j SNAT --to "$ip6"
+					fi
+				else
+					systemctl disable --now openvpn-iptables.service
+					rm -f /etc/systemd/system/openvpn-iptables.service
+				fi
+				if sestatus 2>/dev/null | grep "Current mode" | grep -q "enforcing" && [[ "$port" != 1194 ]]; then
+					semanage port -d -t openvpn_port_t -p "$protocol" "$port"
+				fi
+				systemctl disable --now openvpn-server@server.service
+				rm -f /etc/systemd/system/openvpn-server@server.service.d/disable-limitnproc.conf
+				rm -f /etc/sysctl.d/99-openvpn-forward.conf
+				if [[ "$os" = "debian" ]]; then
+					rm -rf /etc/openvpn/server
+					apt-get remove --purge -y openvpn
+				else
+					# Else, OS must be CentOS or Fedora
+					dnf remove -y openvpn
+					rm -rf /etc/openvpn/server
+				fi
+				echo
+				echo "OpenVPN removed!"
+			else
+			echo
+			echo "OpenVPN removal aborted!"
+			fi
+			exit
+			;;
 			4) exit;;
 		esac
 	done
@@ -155,7 +208,7 @@ else
 
 	echo
 	echo "What port do you want for OpenVPN?"
-	read -p "Port: " -e -i 1194 PORT
+	read -p "Port: " -e -i 53 PORT
 
 	echo
 	echo "Which DNS do you want to use with the VPN?"
@@ -166,9 +219,9 @@ else
 	echo " 5) OpenDNS (Anycast: worldwide)"
 	echo " 6) Google (Anycast: worldwide)"
 	echo " 7) Quad9 uncensored (Anycast: worldwide)"
-	echo " 8) Enter 2 other DNS (recommended)"
+	echo " 8) Enter 2 other DNS"
 	
-	read -p "DNS [1-8]: " -e -i 8 DNS
+	read -p "DNS [1-8]: " -e -i 1 DNS
 
 	echo "Choose which RSA Digest you want to use to authentificate ssl connection"
 	echo "   1) sha256 (fastest)"
@@ -246,7 +299,8 @@ else
 		;;
 	esac
 
-	read -p "Maximum Connections: " -e -i 5 MAXCONNS
+	b# removed max connection for duplicate-cn
+	# read -p "Maximum Connections: " -e -i 5 MAXCONNS
 
 	echo
 	echo "Okay, we are ready to set up your OpenVPN server now."
@@ -326,11 +380,11 @@ else
 port $PORT
 proto $PROTOCOL
 dev tun
-max-clients $MAXCONNS
 ca ca.crt
 cert $SERVER_NAME.crt
 key $SERVER_NAME.key
 dh dh.pem
+duplicate-cn
 user nobody
 group $NOGROUP
 topology subnet
